@@ -974,6 +974,12 @@ onMounted(() => {
 	// Items are now loaded automatically by setPosProfile() in the watcher
 	// This ensures item group filters are loaded BEFORE fetching items
 
+	// POS default: enable barcode scanner + auto-add and keep focus on search.
+	// This is intended for shared touch-screen / cashier stations.
+	scannerEnabled.value = true
+	autoAddEnabled.value = true
+	focusSearchInput()
+
 	// Add passive scroll listeners for better performance
 	// Only bind to the currently active view
 	if (viewMode.value === 'grid' && gridScrollContainer.value) {

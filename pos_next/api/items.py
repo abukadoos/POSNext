@@ -696,7 +696,15 @@ def _get_item_group_with_descendants(item_group):
 	return [item_group] + list(descendants)
 
 
-def _build_item_base_conditions(pos_profile_doc, item_group=None, exclude_variants=True, exclude_templates=False, hide_unavailable=False, warehouse=None):
+def _build_item_base_conditions(
+	pos_profile_doc,
+	item_group=None,
+	exclude_variants=True,
+	exclude_templates=False,
+	hide_unavailable=False,
+	warehouse=None,
+	require_sell_on_till=False,
+):
 	"""Build base SQL conditions for POS item search with hierarchical item group support.
 
 	Returns:
@@ -709,6 +717,13 @@ def _build_item_base_conditions(pos_profile_doc, item_group=None, exclude_varian
 		"i.disabled = 0",
 		"i.is_sales_item = 1",
 	]
+
+	# Only include items that are allowed to be sold on the till when requested.
+	# This relies on a custom checkbox field `custom_sell_on_till` defined on Item
+	# in the main ERPNext site (not in this app). We only add the condition if
+	# the column actually exists to avoid migration errors.
+	if require_sell_on_till and frappe.db.has_column("Item", "custom_sell_on_till"):
+		conditions.append("COALESCE(i.custom_sell_on_till, 0) = 1")
 	if exclude_variants:
 		conditions.append("IFNULL(i.variant_of, '') = ''")
 	if exclude_templates:
@@ -1095,10 +1110,19 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20,
 			exclude_variants = not int(include_variants)
 			exclude_templates = False
 		hide_unavailable = getattr(pos_profile_doc, "hide_unavailable_items", 0)
+		# When there is NO search term (pure browsing), restrict items to those
+		# that have custom_sell_on_till checked. When searching (by name/code/barcode),
+		# we intentionally ignore this flag so that all matching items can be found.
+		require_sell_on_till = not (effective_search_term and effective_search_term.strip())
+
 		conditions, params, extra_joins = _build_item_base_conditions(
-			pos_profile_doc, item_group, exclude_variants=exclude_variants,
+			pos_profile_doc,
+			item_group,
+			exclude_variants=exclude_variants,
 			exclude_templates=exclude_templates,
-			hide_unavailable=hide_unavailable, warehouse=pos_profile_doc.warehouse,
+			hide_unavailable=hide_unavailable,
+			warehouse=pos_profile_doc.warehouse,
+			require_sell_on_till=require_sell_on_till,
 		)
 
 		# Build column list with table alias
@@ -1453,9 +1477,12 @@ def get_items_bulk(pos_profile, item_groups=None, start=0, limit=2000, include_v
 			exclude_templates = False
 		hide_unavailable = getattr(pos_profile_doc, "hide_unavailable_items", 0)
 		conditions, params, extra_joins = _build_item_base_conditions(
-			pos_profile_doc, exclude_variants=exclude_variants,
+			pos_profile_doc,
+			exclude_variants=exclude_variants,
 			exclude_templates=exclude_templates,
-			hide_unavailable=hide_unavailable, warehouse=pos_profile_doc.warehouse,
+			hide_unavailable=hide_unavailable,
+			warehouse=pos_profile_doc.warehouse,
+			require_sell_on_till=True,
 		)
 
 		if item_groups:
@@ -1640,9 +1667,13 @@ def get_items_count(pos_profile, item_group=None, include_variants=0, show_varia
 			exclude_templates = False
 		hide_unavailable = getattr(pos_profile_doc, "hide_unavailable_items", 0)
 		conditions, params, extra_joins = _build_item_base_conditions(
-			pos_profile_doc, item_group, exclude_variants=exclude_variants,
+			pos_profile_doc,
+			item_group,
+			exclude_variants=exclude_variants,
 			exclude_templates=exclude_templates,
-			hide_unavailable=hide_unavailable, warehouse=pos_profile_doc.warehouse,
+			hide_unavailable=hide_unavailable,
+			warehouse=pos_profile_doc.warehouse,
+			require_sell_on_till=True,
 		)
 
 		where_clause = " AND ".join(conditions)
@@ -1731,14 +1762,19 @@ def get_item_groups(pos_profile):
 		)
 
 		if not configured_groups:
-			result = (
+			query = (
 				frappe.qb.from_(ItemGroup)
 				.select(ItemGroup.name.as_("item_group"))
 				.where(ItemGroup.is_group == 0)
 				.orderby(ItemGroup.name)
 				.limit(50)
-				.run(as_dict=True)
 			)
+			# If the custom_sell_on_till checkbox exists on Item Group, use it to
+			# only show groups that should be visible on the till.
+			if frappe.db.has_column("Item Group", "custom_sell_on_till"):
+				query = query.where(ItemGroup.custom_sell_on_till == 1)
+
+			result = query.run(as_dict=True)
 			frappe.cache().set_value(cache_key, result, expires_in_sec=300)
 			return result
 
