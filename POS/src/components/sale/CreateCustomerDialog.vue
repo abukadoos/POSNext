@@ -99,6 +99,18 @@
 					<Input v-model="customerData.email_id" type="email" :placeholder="__('Enter email address')" />
 				</div>
 
+				<!-- Customer POS ID (for barcode/lookup) -->
+				<div>
+					<label class="block text-start text-sm font-medium text-gray-700 mb-2">
+						{{ __("Customer POS ID") }}
+					</label>
+					<Input
+						v-model="customerData.customer_pos_id"
+						type="text"
+						:placeholder="__('e.g. 101002977 for barcode lookup')"
+					/>
+				</div>
+
 				<!-- Customer Group -->
 				<div>
 					<label class="block text-start text-sm font-medium text-gray-700 mb-2">
@@ -233,6 +245,7 @@ const customerData = ref({
 	customer_name: "",
 	mobile_no: "",
 	email_id: "",
+	customer_pos_id: "",
 	customer_group: "Individual",
 	territory: "All Territories",
 })
@@ -342,6 +355,7 @@ const createCustomerResource = createResource({
 			territory: customerData.value.territory || __("All Territories"),
 			mobile_no: customerData.value.mobile_no || "",
 			email_id: customerData.value.email_id || "",
+			...(customerData.value.customer_pos_id && { customer_pos_id: customerData.value.customer_pos_id.trim() }),
 		},
 	}),
 	onSuccess: (data) => {
@@ -357,17 +371,23 @@ const createCustomerResource = createResource({
 
 const updateCustomerResource = createResource({
 	url: "frappe.client.set_value",
-	makeParams: () => ({
-		doctype: "Customer",
-		name: props.customer?.name,
-		fieldname: {
+	makeParams: () => {
+		const fields = {
 			customer_name: customerData.value.customer_name,
 			customer_group: customerData.value.customer_group || __("Individual"),
 			territory: customerData.value.territory || __("All Territories"),
 			mobile_no: customerData.value.mobile_no || "",
 			email_id: customerData.value.email_id || "",
-		},
-	}),
+		}
+		if (customerData.value.customer_pos_id !== undefined && customerData.value.customer_pos_id !== null) {
+			fields.customer_pos_id = customerData.value.customer_pos_id.trim()
+		}
+		return {
+			doctype: "Customer",
+			name: props.customer?.name,
+			fieldname: fields,
+		}
+	},
 	onSuccess: (data) => {
 		showSuccess(__("Customer {0} updated successfully", [data.customer_name]))
 		emit("customer-updated", data)
@@ -461,6 +481,7 @@ const resetForm = () => {
 		customer_name: "",
 		mobile_no: "",
 		email_id: "",
+		customer_pos_id: "",
 		customer_group: "Individual",
 		territory: "All Territories",
 	})
@@ -484,6 +505,7 @@ watch(
 		if (customer?.name) {
 			customerData.value.customer_name = customer.customer_name || ""
 			customerData.value.email_id = customer.email_id || ""
+			customerData.value.customer_pos_id = customer.customer_pos_id || ""
 			customerData.value.customer_group = customer.customer_group || "Individual"
 			customerData.value.territory = customer.territory || "All Territories"
 			// Handle mobile_no with country code

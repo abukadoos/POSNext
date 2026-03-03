@@ -4,7 +4,7 @@ import { offlineWorker } from "@/utils/offline/workerClient"
 import { logger } from "@/utils/logger"
 import { useRealtimeCustomers } from "@/composables/useRealtimeCustomers"
 import { defineStore } from "pinia"
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 
 const log = logger.create("CustomerSearch")
 
@@ -24,6 +24,10 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 	// Sync state
 	const CUSTOMERS_SYNC_KEY = "pos_customers_last_sync"
 	let serverDataFresh = false
+
+	// When search term looks like a POS id (e.g. 101002977), lookup via API and show in results
+	const posIdLookupCustomer = ref(null)
+	const posIdLookupTerm = ref("")
 
 	// Ultra-fast search helper - optimized for speed
 	function quickMatch(search, customer) {
@@ -150,7 +154,15 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 
 		// Sort ONLY what we found (much faster than sorting everything)
 		results.sort((a, b) => b.score - a.score)
-		const final = results.map((r) => r.customer)
+		let final = results.map((r) => r.customer)
+
+		// If search term looks like a POS id, include customer from API lookup if not already in list
+		if (posIdLookupCustomer.value && posIdLookupTerm.value === term) {
+			const alreadyIn = final.some((c) => c.name === posIdLookupCustomer.value.name)
+			if (!alreadyIn) {
+				final = [posIdLookupCustomer.value, ...final]
+			}
+		}
 
 		// Cache this result for instant retrieval
 		resultCache.value.set(cacheKey, final)
@@ -345,6 +357,36 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 		searchTerm.value = term
 		selectedIndex.value = -1
 	}
+
+	// When user types a value that could be a Customer POS id, lookup via API so search works even if cache lacks the field
+	watch(searchTerm, async (term) => {
+		const t = (term || "").trim()
+		if (!t || t.length < 3) {
+			posIdLookupCustomer.value = null
+			posIdLookupTerm.value = ""
+			return
+		}
+		if (!/^\d+$/.test(t)) {
+			posIdLookupCustomer.value = null
+			posIdLookupTerm.value = ""
+			return
+		}
+		try {
+			const r = await call("pos_next.api.customers.get_customer_by_pos_id", { pos_id: t })
+			const customer = r?.message ?? r
+			if (customer?.name && searchTerm.value.trim() === t) {
+				posIdLookupCustomer.value = customer
+				posIdLookupTerm.value = t
+				resultCache.value.delete(t.toLowerCase())
+			} else {
+				posIdLookupCustomer.value = null
+				posIdLookupTerm.value = ""
+			}
+		} catch (e) {
+			posIdLookupCustomer.value = null
+			posIdLookupTerm.value = ""
+		}
+	})
 
 	function clearSearch() {
 		searchTerm.value = ""
