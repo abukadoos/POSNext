@@ -1804,17 +1804,40 @@ def get_item_groups(pos_profile):
 				query = query.where(ItemGroup.custom_sell_on_till == 1)
 
 			result = query.run(as_dict=True)
+			# Include custom_sell_on_till in response for frontend filtering
+			if result and frappe.db.has_column("Item Group", "custom_sell_on_till"):
+				names = [r["item_group"] for r in result]
+				vals = frappe.db.get_values(
+					"Item Group", {"name": ["in", names]}, "name,custom_sell_on_till", as_dict=True
+				)
+				by_name = {v["name"]: v.get("custom_sell_on_till") for v in (vals or [])}
+				for r in result:
+					r["custom_sell_on_till"] = by_name.get(r["item_group"], 1)
 			frappe.cache().set_value(cache_key, result, expires_in_sec=300)
 			return result
 
+		# Build result with hierarchy; filter and include custom_sell_on_till when column exists
+		has_sell_on_till = frappe.db.has_column("Item Group", "custom_sell_on_till")
+		sell_on_till_by_name = {}
+		if has_sell_on_till:
+			vals = frappe.db.get_values(
+				"Item Group", {"name": ["in", list(configured_groups)]}, "name,custom_sell_on_till", as_dict=True
+			)
+			sell_on_till_by_name = {v["name"]: v.get("custom_sell_on_till") for v in (vals or [])}
+
 		result = []
 		for group_name in configured_groups:
+			if has_sell_on_till and sell_on_till_by_name.get(group_name, 0) != 1:
+				continue
 			descendants = _get_item_group_with_descendants(group_name)
-			result.append({
+			row = {
 				"item_group": group_name,
 				"is_group": len(descendants) > 1,
 				"child_groups": descendants[1:] if len(descendants) > 1 else [],
-			})
+			}
+			if has_sell_on_till:
+				row["custom_sell_on_till"] = sell_on_till_by_name.get(group_name, 1)
+			result.append(row)
 
 		frappe.cache().set_value(cache_key, result, expires_in_sec=300)
 		return result

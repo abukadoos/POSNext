@@ -1779,14 +1779,17 @@ async function handleShiftClosed() {
 }
 
 function handleItemSelected(item, autoAdd = false) {
-	// Auto-add mode
+		// Auto-add mode
 	if (autoAdd) {
 		try {
-			// Check if item has resolved barcode data (weighted/priced)
-			if (item.resolved_qty && item.resolved_barcode_type) {
-				// Get the unit price for the resolved UOM from uom_prices, or fall back to item rate
+			// Check if item has resolved barcode data (weighted/priced/price-per-unit)
+			if ((item.resolved_qty != null || item.resolved_price != null) && item.resolved_barcode_type) {
+				// Use barcode-resolved price when present (e.g. embedded price 0257 -> 2.57), else unit rate from UOM
 				const resolvedUom = item.resolved_uom || item.uom;
-				const unitRate = item.uom_prices?.[resolvedUom] || item.rate;
+				const unitRate = item.resolved_price != null
+					? item.resolved_price
+					: (item.uom_prices?.[resolvedUom] || item.rate);
+				const qty = item.resolved_qty != null ? item.resolved_qty : 1;
 
 				const resolvedItem = {
 					...item,
@@ -1795,7 +1798,7 @@ function handleItemSelected(item, autoAdd = false) {
 					price_list_rate: unitRate,
 					is_resolved_barcode: true, // Mark as readonly
 				};
-				cartStore.addItem(resolvedItem, item.resolved_qty, true, shiftStore.currentProfile);
+				cartStore.addItem(resolvedItem, qty, true, shiftStore.currentProfile);
 			} else {
 				cartStore.addItem(item, 1, true, shiftStore.currentProfile);
 			}

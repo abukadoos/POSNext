@@ -1,37 +1,53 @@
 <template>
 	<div class="flex flex-col h-full bg-gray-50">
-		<!-- Item Groups Filter Tabs -->
-		<div class="px-1.5 sm:px-3 pt-1.5 sm:pt-3 pb-1.5 sm:pb-2 bg-white border-b border-gray-200">
-			<div class="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x snap-mandatory">
-				<button
-					@click="itemStore.setSelectedItemGroup(null)"
-					:class="[
-						'flex items-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-medium whitespace-nowrap transition-[background-color,border-color] duration-75 touch-manipulation snap-start flex-shrink-0',
-						!selectedItemGroup
-							? 'bg-blue-50 text-blue-600 border-2 border-blue-500 shadow-sm'
-							: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:bg-gray-100',
-					]"
-				>
-					<svg class="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-					</svg>
-					<span>{{ __('All Items') }}</span>
-				</button>
-				<button
-					v-for="group in itemGroups"
-					:key="group.item_group"
-					@click="itemStore.setSelectedItemGroup(group.item_group)"
-					:class="[
-						'flex items-center px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-medium whitespace-nowrap transition-[background-color,border-color] duration-75 touch-manipulation snap-start flex-shrink-0',
-						selectedItemGroup === group.item_group
-							? 'bg-blue-50 text-blue-600 border-2 border-blue-500 shadow-sm'
-							: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 active:bg-gray-100',
-					]"
-				>
-					<span>{{ __(group.item_group) }}</span>
-				</button>
+		<!-- Two-level navigation: Groups (first screen) → Items (second screen with back) -->
+
+		<!-- Group View: list/grid of item groups (filtered by sell_on_till) -->
+		<template v-if="currentView === 'groups'">
+			<div class="px-1.5 sm:px-3 pt-1.5 sm:pt-3 pb-1.5 sm:pb-2 bg-white border-b border-gray-200">
+				<h2 class="text-sm font-semibold text-gray-700 mb-2">{{ __('Item Groups') }}</h2>
+				<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+					<button
+						@click="selectGroup(null)"
+						class="group-card bg-white border border-gray-200 rounded-lg p-3 hover:border-blue-400 hover:shadow-md cursor-pointer transition text-center"
+					>
+						<svg class="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-gray-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+						</svg>
+						<div class="text-sm font-medium text-gray-900">{{ __('All Items') }}</div>
+					</button>
+					<button
+						v-for="group in visibleGroups"
+						:key="group.item_group"
+						@click="selectGroup(group)"
+						class="group-card bg-white border border-gray-200 rounded-lg p-3 hover:border-blue-400 hover:shadow-md cursor-pointer transition text-center"
+					>
+						<div class="text-sm font-medium text-gray-900">{{ __(group.item_group) }}</div>
+					</button>
+				</div>
 			</div>
-		</div>
+		</template>
+
+		<!-- Item View: back button + title, then search and item list -->
+		<template v-else-if="currentView === 'items'">
+			<div class="px-1.5 sm:px-3 pt-1.5 sm:pt-3 pb-1.5 sm:pb-2 bg-white border-b border-gray-200">
+				<div class="flex items-center gap-2 mb-0">
+					<button
+						@click="backToGroups"
+						type="button"
+						class="p-1.5 rounded-lg hover:bg-gray-100 touch-manipulation"
+						:title="__('Back to groups')"
+						:aria-label="__('Back to groups')"
+					>
+						<svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+						</svg>
+					</button>
+					<h2 class="text-sm font-semibold text-gray-700 truncate flex-1">
+						{{ selectedGroup ? __(selectedGroup.item_group) : __('All Items') }}
+					</h2>
+				</div>
+			</div>
 
 		<!-- Cache Sync Indicator -->
 		<div v-if="cacheSyncing" class="px-1.5 sm:px-3 py-1 bg-blue-50 border-b border-blue-200">
@@ -702,6 +718,7 @@
 				</div>
 			</div>
 		</div>
+		</template>
 	</div>
 
 	<!-- Warehouse Availability Dialog -->
@@ -801,6 +818,28 @@ const {
 		return false
 	},
 })
+
+// Two-level navigation: groups (first screen) → items (second screen with back)
+const currentView = ref("groups")
+const selectedGroup = ref(null)
+
+// Groups with sell_on_till=1 (backend may already filter; treat missing field as visible)
+const visibleGroups = computed(() => {
+	if (!itemGroups.value?.length) return []
+	return itemGroups.value.filter((g) => g.custom_sell_on_till !== 0)
+})
+
+function selectGroup(group) {
+	selectedGroup.value = group
+	currentView.value = "items"
+	itemStore.setSelectedItemGroup(group?.item_group ?? null)
+}
+
+function backToGroups() {
+	currentView.value = "groups"
+	selectedGroup.value = null
+	itemStore.setSelectedItemGroup(null)
+}
 
 // Local state
 const viewMode = ref("grid")

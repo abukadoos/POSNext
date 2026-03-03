@@ -114,33 +114,34 @@ def resolve_barcode(barcode: str, pos_profile: str) -> BarcodeResult | None:
     if resolved:
         return resolved
 
-    # 2) Built-in fallback: 13-digit weighted barcode starting with '20'
+    # 2) Built-in fallback: 13-digit barcode starting with '20' — price-per-unit format
     #    Example: 2000010002573
     #    - '20'      -> variable flag
     #    - '00010'   -> embedded item barcode
     #    - next 1    -> check digit (ignored)
-    #    - next 4    -> weight * 100 (e.g. 0257 -> 2.57)
+    #    - next 4    -> price per unit * 100 (e.g. 0257 -> 2.57)
     #    - last 1    -> check digit (ignored)
+    #    The 4 digits are treated as PRICE (e.g. 2.57), not quantity.
     try:
         code = (barcode or "").strip()
         if len(code) == 13 and code.startswith("20"):
             item_barcode = code[2:7]
-            weight_digits = code[8:12]
+            price_digits = code[8:12]
 
-            if not weight_digits.isdigit():
+            if not price_digits.isdigit():
                 return None
 
-            weight_int = int(weight_digits)
-            qty = weight_int / 100.0
-            qty_str = f"{qty:.2f}"
-            integer_value, decimal_value = qty_str.split(".")
+            price_int = int(price_digits)
+            price_value = price_int / 100.0
+            price_str = f"{price_value:.2f}"
+            integer_value, decimal_value = price_str.split(".")
 
             return {
                 "item_barcode": item_barcode,
                 "integer_value": integer_value,
                 "decimal_value": decimal_value,
-                "barcode_type": "Weighted",
-                "qty": qty,
+                "barcode_type": "PricePerUnit",
+                "qty": None,
             }
     except Exception:
         frappe.log_error(
@@ -190,6 +191,7 @@ def compute_resolved_item_data(
         TYPE_WEIGHTED = "Weighted"
         TYPE_PRICED = "Priced"
 
+    TYPE_PRICE_PER_UNIT = "PricePerUnit"
     barcode_type = resolved_barcode.get("barcode_type")
     barcode_uom = resolved_barcode.get("uom")
     # If barcode resolver didn't provide a UOM, fall back to item's stock UOM
@@ -223,6 +225,16 @@ def compute_resolved_item_data(
             "resolved_qty": qty,
             "resolved_uom": uom,
             "resolved_price": price,
+            "resolved_barcode_type": barcode_type,
+        }
+    elif barcode_type == TYPE_PRICE_PER_UNIT:
+        # 4 digits = price per unit (e.g. 0257 -> 2.57). Apply as line rate; qty = 1.
+        price_per_unit = float(f"{integer_value}.{decimal_value}")
+        uom = barcode_uom or item_uom
+        return {
+            "resolved_qty": 1.0,
+            "resolved_uom": uom,
+            "resolved_price": price_per_unit,
             "resolved_barcode_type": barcode_type,
         }
     elif barcode_type == TYPE_PRICED:
