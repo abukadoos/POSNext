@@ -6,7 +6,7 @@ import { offlineState } from "./offlineState"
 const CACHE_STRUCTURE = {
 	// Define what gets cached
 	items: ["item_code", "item_name", "item_group", "barcodes", "price", "stock"],
-	customers: ["name", "customer_name", "mobile_no", "email_id"],
+	customers: ["name", "customer_name", "mobile_no", "email_id", "customer_pos_id"],
 	item_prices: ["price_list", "item_code", "price"],
 	local_stock: ["item_code", "warehouse", "actual_qty"],
 	payment_methods: [

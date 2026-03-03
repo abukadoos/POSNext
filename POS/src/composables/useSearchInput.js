@@ -22,8 +22,10 @@ import { QueuedMutex } from "@/utils/mutex"
  *        Component's selectItem(). Returns true if item was accepted.
  * @param {Object} options.showWarning        - useToast().showWarning
  * @param {import('vue').Ref<boolean>} options.isAnyDialogOpen
+ * @param {(barcode: string) => Promise<boolean>} [options.tryCustomerBarcode]
+ *        Optional. If barcode starts with "101", called with full barcode; return true if handled (e.g. customer set).
  */
-export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialogOpen }) {
+export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialogOpen, tryCustomerBarcode }) {
 	// --- Reactive state (exposed) ---
 	const searchInputRef = ref(null)
 	const scannerEnabled = ref(false)
@@ -146,6 +148,20 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 		const shouldAutoAdd = forceAutoAdd || (scannerEnabled.value && autoAddEnabled.value)
 
 		barcodeQueue.withLock(async () => {
+			// If barcode starts with 101, treat as customer POS id (e.g. 101002977)
+			const barcodeStr = String(barcode || '').trim()
+			if (barcodeStr.startsWith('101') && tryCustomerBarcode && typeof tryCustomerBarcode === 'function') {
+				try {
+					const handled = await tryCustomerBarcode(barcodeStr)
+					if (handled) {
+						focusSearchInput()
+						return
+					}
+				} catch (err) {
+					console.error('Customer barcode (101) lookup failed:', err)
+				}
+			}
+
 			try {
 				const item = await itemStore.searchByBarcode(barcode)
 				if (item) {

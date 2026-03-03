@@ -334,6 +334,8 @@ def search_by_barcode(barcode, pos_profile):
 		barcode_data = frappe.db.get_value(
 			"Item Barcode", {"barcode": effective_barcode}, ["parent", "uom"], as_dict=True
 		)
+		item_code = None
+		barcode_uom = None
 
 		if barcode_data:
 			item_code = barcode_data.parent
@@ -341,7 +343,19 @@ def search_by_barcode(barcode, pos_profile):
 		else:
 			# Try searching in item code field directly
 			item_code = frappe.db.get_value("Item", {"name": effective_barcode})
-			barcode_uom = None
+			if not item_code and effective_barcode.isdigit():
+				# For numeric barcodes (e.g. 00010 from scale), try without leading zeros
+				# so that item code "10" matches barcode "00010"
+				stripped = effective_barcode.lstrip("0") or "0"
+				if stripped != effective_barcode:
+					barcode_data = frappe.db.get_value(
+						"Item Barcode", {"barcode": stripped}, ["parent", "uom"], as_dict=True
+					)
+					if barcode_data:
+						item_code = barcode_data.parent
+						barcode_uom = barcode_data.uom
+					if not item_code:
+						item_code = frappe.db.get_value("Item", {"name": stripped})
 
 		if not item_code:
 			frappe.throw(_("Item with barcode {0} not found").format(barcode))
@@ -1141,29 +1155,44 @@ def get_items(pos_profile, search_term=None, item_group=None, start=0, limit=20,
 			search_text = "CONCAT(COALESCE(i.name, ''), ' ', COALESCE(i.item_name, ''), ' ', COALESCE(i.description, ''))"
 			word_conditions = " AND ".join([f"{search_text} LIKE %s"] * len(search_words))
 
-			# Also match if barcode contains the search term
-			barcode_condition = "ib.barcode = %s"
+			# Barcode: exact match and, for numeric barcodes, match with leading zeros stripped (e.g. 00010 -> 10)
+			barcode_conditions = ["ib.barcode = %s"]
+			barcode_params = [effective_search_term]
+			if effective_search_term.isdigit():
+				stripped_barcode = effective_search_term.lstrip("0") or "0"
+				if stripped_barcode != effective_search_term:
+					barcode_conditions.append("ib.barcode = %s")
+					barcode_params.append(stripped_barcode)
+			barcode_condition = " OR ".join(barcode_conditions)
 
 			# Combine: match item fields OR match barcode
-			conditions.append(f"(({word_conditions}) OR {barcode_condition})")
+			conditions.append(f"(({word_conditions}) OR ({barcode_condition}))")
 			params.extend([f"%{word}%" for word in search_words])
-			params.append(effective_search_term)  # For barcode matching
+			params.extend(barcode_params)
 
 			# Relevance scoring with case-insensitive comparison
 			# Exact barcode match gets highest priority, use MAX() for grouping
 			prefix_pattern = f"{effective_search_term}%"
+			relevance_parts = [
+				"WHEN ib.barcode = %s THEN 1500",
+				"WHEN ib.barcode LIKE %s THEN 1200",
+				"WHEN LOWER(i.item_name) = LOWER(%s) THEN 1000",
+				"WHEN LOWER(i.name) = LOWER(%s) THEN 900",
+				"WHEN LOWER(i.item_name) LIKE LOWER(%s) THEN 500",
+				"WHEN LOWER(i.name) LIKE LOWER(%s) THEN 400",
+			]
+			score_params = [effective_search_term, prefix_pattern, effective_search_term, effective_search_term, prefix_pattern, prefix_pattern]
+			if effective_search_term.isdigit():
+				stripped_barcode = effective_search_term.lstrip("0") or "0"
+				if stripped_barcode != effective_search_term:
+					relevance_parts.insert(2, "WHEN ib.barcode = %s THEN 1450")  # stripped match just below exact
+					score_params.insert(2, stripped_barcode)
 			relevance = f"""
 				MAX(CASE
-					WHEN ib.barcode = %s THEN 1500
-					WHEN ib.barcode LIKE %s THEN 1200
-					WHEN LOWER(i.item_name) = LOWER(%s) THEN 1000
-					WHEN LOWER(i.name) = LOWER(%s) THEN 900
-					WHEN LOWER(i.item_name) LIKE LOWER(%s) THEN 500
-					WHEN LOWER(i.name) LIKE LOWER(%s) THEN 400
+					{" ".join(relevance_parts)}
 					ELSE 100
 				END)
 			"""
-			score_params = [effective_search_term, prefix_pattern, effective_search_term, effective_search_term, prefix_pattern, prefix_pattern]
 			order_by = f"{relevance} DESC, i.item_name ASC"
 		else:
 			# No search term - simple ordering

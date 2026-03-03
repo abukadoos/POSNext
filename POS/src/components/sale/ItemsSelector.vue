@@ -725,6 +725,8 @@ import { useDialogState } from "@/composables/useDialogState"
 import { useSearchInput } from "@/composables/useSearchInput"
 import { DEFAULT_CURRENCY, formatCurrency as formatCurrencyUtil } from "@/utils/currency"
 import { useToast } from "@/composables/useToast"
+import { call } from "@/utils/apiWrapper"
+import { usePOSCartStore } from "@/stores/posCart"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue"
 import {
@@ -758,6 +760,7 @@ const { isAnyDialogOpen } = useDialogState()
 
 // Use Pinia store
 const itemStore = useItemSearchStore()
+const cartStore = usePOSCartStore()
 const {
 	filteredItems,
 	searchTerm,
@@ -783,6 +786,20 @@ const {
 } = useSearchInput({
 	itemStore, onItemFound: selectItem,
 	showWarning, isAnyDialogOpen,
+	tryCustomerBarcode: async (barcode) => {
+		if (!barcode || !String(barcode).trim().startsWith("101")) return false
+		try {
+			const r = await call("pos_next.api.customers.get_customer_by_pos_id", { pos_id: barcode.trim() })
+			const customer = r?.message ?? r
+			if (customer?.name) {
+				cartStore.setCustomer(customer)
+				return true
+			}
+		} catch (e) {
+			console.error("Customer POS id lookup failed:", e)
+		}
+		return false
+	},
 })
 
 // Local state

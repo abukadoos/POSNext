@@ -45,11 +45,15 @@ def get_customers(search_term="", pos_profile=None, limit=20, modified_since=Non
             # Full fetch: only active customers
             filters["disabled"] = 0
 
+        fields = ["name", "customer_name", "mobile_no", "email_id", "disabled"]
+        if frappe.db.has_column("Customer", "customer_pos_id"):
+            fields.append("customer_pos_id")
+
         customer_limit = limit if limit not in (None, 0) else frappe.db.count("Customer", filters)
         result = frappe.get_all(
             "Customer",
             filters=filters,
-            fields=["name", "customer_name", "mobile_no", "email_id", "disabled"],
+            fields=fields,
             limit=customer_limit,
             order_by="customer_name asc",
         )
@@ -184,6 +188,30 @@ def get_default_loyalty_program_from_settings():
     if pos_settings and pos_settings[0].get("default_loyalty_program"):
         return pos_settings[0].default_loyalty_program
 
+    return None
+
+
+@frappe.whitelist()
+def get_customer_by_pos_id(pos_id):
+    """
+    Return customer doc (name, customer_name, ...) if found by Customer POS id (e.g. barcode 101002977).
+
+    Looks up by the first existing column among: customer_pos_id (standard), posa_customer_pos_id,
+    custom_customer_pos_id, custom_pos_id.
+    """
+    if not pos_id or not str(pos_id).strip():
+        return None
+    pos_id = str(pos_id).strip()
+    for col in ("customer_pos_id", "posa_customer_pos_id", "custom_customer_pos_id", "custom_pos_id"):
+        if frappe.db.has_column("Customer", col):
+            customer = frappe.db.get_value(
+                "Customer",
+                {col: pos_id},
+                ["name", "customer_name", "mobile_no", "email_id", "disabled"],
+                as_dict=True,
+            )
+            if customer:
+                return customer
     return None
 
 

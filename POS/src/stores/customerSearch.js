@@ -37,6 +37,7 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 				mobile: (customer.mobile_no || "").toLowerCase(),
 				email: (customer.email_id || "").toLowerCase(),
 				id: (customer.name || "").toLowerCase(),
+				posId: (customer.customer_pos_id || "").toLowerCase(),
 				// Pre-compute word starts for super fast word matching
 				nameWords: (customer.customer_name || "").toLowerCase().split(" "),
 			}
@@ -54,6 +55,13 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 		}
 
 		if (cached.name.includes(term)) return 180 // Name contains
+
+		// Customer POS ID (e.g. 101002977) - search by barcode / typed id
+		if (cached.posId && cached.posId.length > 0) {
+			if (cached.posId === term) return 260
+			if (cached.posId.startsWith(term)) return 235
+			if (cached.posId.includes(term)) return 140
+		}
 
 		// Phone checks (very important for POS)
 		if (cached.mobile === term) return 250
@@ -305,7 +313,7 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 	// Real-time Push Integration
 	const { onCustomerUpdate } = useRealtimeCustomers()
 	onCustomerUpdate(async (data) => {
-		const { name, action, customer_name, mobile_no, email_id, disabled } = data
+		const { name, action, customer_name, mobile_no, email_id, disabled, customer_pos_id } = data
 		console.log("Customer update via real-time:", data)
 		if (action === "delete" || disabled) {
 			// Remove from memory
@@ -327,6 +335,7 @@ export const useCustomerSearchStore = defineStore("customerSearch", () => {
 				mobile_no,
 				email_id,
 				disabled: !!disabled,
+				...(customer_pos_id !== undefined && { customer_pos_id }),
 			}
 			await addCustomerToCache(customer)
 		}
