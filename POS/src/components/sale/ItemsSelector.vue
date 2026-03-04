@@ -823,10 +823,10 @@ const {
 const currentView = ref("groups")
 const selectedGroup = ref(null)
 
-// Groups with sell_on_till=1 (backend may already filter; treat missing field as visible)
+// Groups with pay_on_till=1 (backend may already filter; treat missing field as visible)
 const visibleGroups = computed(() => {
 	if (!itemGroups.value?.length) return []
-	return itemGroups.value.filter((g) => g.custom_sell_on_till !== 0)
+	return itemGroups.value.filter((g) => g.custom_pay_on_till !== 0)
 })
 
 function selectGroup(group) {
