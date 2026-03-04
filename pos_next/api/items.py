@@ -429,6 +429,15 @@ def search_by_barcode(barcode, pos_profile):
 			if resolved_item_data:
 				item_details.update(resolved_item_data)
 
+				# For price barcodes (PricePerUnit or Priced), override the rate
+				barcode_type = resolved_item_data.get("resolved_barcode_type")
+				resolved_price = resolved_item_data.get("resolved_price")
+				if barcode_type in ["PricePerUnit", "Priced"] and resolved_price is not None:
+					# Override the standard rate with the price from the barcode
+					item_details["rate"] = resolved_price
+					# Also update price_list_rate if your cart uses it (POSNext does)	
+					item_details["price_list_rate"] = resolved_price
+
 		return item_details
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Search by Barcode Error")
