@@ -39,6 +39,19 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 	const REFOCUS_DELAY_MS = 2500
 	const barcodeQueue = new QueuedMutex({ timeout: 10000, name: "BarcodeSearch" })
 
+	/** Heuristic: value looks like a barcode (so we do barcode API), not a name search. */
+	function looksLikeBarcode(value) {
+		const s = (value || "").trim()
+		if (!s) return false
+		// Customer POS id pattern
+		if (s.startsWith("101") && s.length >= 6) return true
+		// Typical scanned: EAN-13, UPC, or embedded 20xxxxx (length 8+)
+		if (s.length >= 8) return true
+		// Short numeric (e.g. scale 00010)
+		if (s.length >= 5 && /^\d+$/.test(s)) return true
+		return false
+	}
+
 	// ---- Timer helpers ----
 
 	function clearAutoSearchTimer() {
@@ -86,20 +99,18 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 			event.preventDefault()
 			clearAutoSearchTimer()
 
-			// Snapshot the barcode NOW from the DOM input, before anything overwrites it
-			const barcode = searchInputRef.value?.value?.trim() || itemStore.searchTerm?.trim()
-			if (barcode) {
-				// Clear input immediately so next scan starts clean
+			const value = searchInputRef.value?.value?.trim() || itemStore.searchTerm?.trim()
+			if (!value) return
+
+			// Only run barcode lookup when scanner/auto-add is on AND value looks like a barcode.
+			// Otherwise leave search as-is so name search results stay visible (user can click an item).
+			if ((scannerEnabled.value || autoAddEnabled.value) && looksLikeBarcode(value)) {
 				itemStore.clearSearch()
 				if (searchInputRef.value) searchInputRef.value.value = ""
-
-				// Queue the search with the captured barcode
-				processBarcodeScan(barcode, autoAddEnabled.value)
+				processBarcodeScan(value, autoAddEnabled.value)
 			}
 			return
 		}
-		// All other keys: no special handling needed.
-		// Dead scanner-speed-detection code removed.
 	}
 
 	/**
@@ -123,11 +134,12 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 
 		clearAutoSearchTimer()
 
-		// Auto-add: after user stops typing for 500 ms, trigger barcode search
-		if (autoAddEnabled.value && value.trim().length > 0) {
+		// Auto-add barcode scan only when value looks like a barcode (not a name).
+		// Otherwise keep the search term so name search results show and user can click an item.
+		if (autoAddEnabled.value && value.trim().length > 0 && looksLikeBarcode(value)) {
 			autoSearchTimer = setTimeout(() => {
 				const barcode = searchInputRef.value?.value?.trim() || itemStore.searchTerm?.trim()
-				if (barcode) {
+				if (barcode && looksLikeBarcode(barcode)) {
 					itemStore.clearSearch()
 					if (searchInputRef.value) searchInputRef.value.value = ""
 					processBarcodeScan(barcode, true)
