@@ -28,7 +28,7 @@
 			</div>
 		</template>
 
-		<!-- Item View: back button + title, then search and item list -->
+		<!-- Item View: back button + title only -->
 		<template v-else-if="currentView === 'items'">
 			<div class="px-1.5 sm:px-3 pt-1.5 sm:pt-3 pb-1.5 sm:pb-2 bg-white border-b border-gray-200">
 				<div class="flex items-center gap-2 mb-0">
@@ -48,8 +48,9 @@
 					</h2>
 				</div>
 			</div>
+		</template>
 
-		<!-- Cache Sync Indicator -->
+		<!-- Cache Sync Indicator (always visible) -->
 		<div v-if="cacheSyncing" class="px-1.5 sm:px-3 py-1 bg-blue-50 border-b border-blue-200">
 			<div class="flex items-center justify-center gap-2 text-[10px] sm:text-xs text-blue-700">
 				<div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
@@ -57,7 +58,7 @@
 			</div>
 		</div>
 
-		<!-- Search Bar with Barcode Scanner and View Controls -->
+		<!-- Search Bar: always visible so barcode scan works from any screen -->
 		<div class="px-1.5 sm:px-3 py-1.5 sm:py-2 bg-white border-b border-gray-200">
 			<div class="flex items-center gap-1 sm:gap-2">
 				<div class="flex-1 relative min-w-0">
@@ -86,6 +87,8 @@
 						@input="handleSearchInput"
 						@keydown="handleKeyDown"
 						@click="handleSearchClick"
+						@focus="onSearchFocus"
+						@blur="onSearchBlur"
 						type="text"
 						:placeholder="searchPlaceholder"
 						:class="[
@@ -133,6 +136,13 @@
 						</button>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Item view content: view toggles, sort, loading, grid/list (only when viewing items) -->
+		<template v-if="currentView === 'items'">
+		<div class="px-1.5 sm:px-3 py-1.5 sm:py-2 bg-white border-b border-gray-200">
+			<div class="flex items-center gap-1 sm:gap-2">
 				<div class="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
 					<button
 						@click="setViewMode('grid')"
@@ -730,6 +740,37 @@
 		:uom="warehouseDialogItem.uom"
 		:company="warehouseDialogItem.company"
 	/>
+
+	<!-- Barcode Not Found: full-screen popup with large OK for cashier -->
+	<Teleport to="body">
+		<Transition name="barcode-not-found-fade">
+			<div
+				v-if="showBarcodeNotFoundModal"
+				class="fixed inset-0 z-[9999] flex flex-col bg-black/50"
+				@click.self="closeBarcodeNotFoundModal"
+			>
+				<div class="flex-1 flex flex-col items-center justify-center p-6">
+					<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
+						<div class="text-amber-500 mb-4">
+							<svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+							</svg>
+						</div>
+						<h3 class="text-xl sm:text-2xl font-bold text-gray-900 mb-2">{{ __('Barcode Not Found') }}</h3>
+						<p class="text-base sm:text-lg text-gray-600 mb-2">{{ __('No item found with barcode') }}</p>
+						<p class="text-sm font-mono text-gray-500 break-all">{{ barcodeNotFoundValue || '—' }}</p>
+					</div>
+				</div>
+				<button
+					type="button"
+					@click="closeBarcodeNotFoundModal"
+					class="w-full min-h-[72px] sm:min-h-[80px] text-xl sm:text-2xl font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 touch-manipulation rounded-none"
+				>
+					{{ __('OK') }}
+				</button>
+			</div>
+		</Transition>
+	</Teleport>
 </template>
 
 <script setup>
@@ -797,6 +838,7 @@ const {
 const {
 	searchInputRef, scannerEnabled, autoAddEnabled,
 	handleSearchInput, handleKeyDown, handleSearchClick,
+	onSearchFocus, onSearchBlur,
 	toggleBarcodeScanner, toggleAutoAdd, focusSearchInput,
 	clearSearchAndResetInput,
 	cleanup: cleanupSearchInput,
@@ -817,16 +859,23 @@ const {
 		}
 		return false
 	},
+	onBarcodeNotFound: openBarcodeNotFoundModal,
 })
+
+function closeBarcodeNotFoundModal() {
+	showBarcodeNotFoundModal.value = false
+	barcodeNotFoundValue.value = ''
+	focusSearchInput()
+}
 
 // Two-level navigation: groups (first screen) → items (second screen with back)
 const currentView = ref("groups")
 const selectedGroup = ref(null)
 
-// Groups with pay_on_till=1 (backend may already filter; treat missing field as visible)
+// Groups with pay_on_till=1; if field missing (e.g. column not in DB), show all
 const visibleGroups = computed(() => {
 	if (!itemGroups.value?.length) return []
-	return itemGroups.value.filter((g) => g.custom_pay_on_till !== 0)
+	return itemGroups.value.filter((g) => g.custom_pay_on_till === undefined || g.custom_pay_on_till !== 0)
 })
 
 function selectGroup(group) {
@@ -852,6 +901,14 @@ const skipPageReset = ref(false) // Skip page reset when navigating via paginati
 // Warehouse availability dialog state
 const showWarehouseDialog = ref(false)
 const warehouseDialogItem = ref(null)
+
+// Barcode not found popup (large OK for cashier)
+const showBarcodeNotFoundModal = ref(false)
+const barcodeNotFoundValue = ref('')
+function openBarcodeNotFoundModal(barcode) {
+	barcodeNotFoundValue.value = barcode || ''
+	showBarcodeNotFoundModal.value = true
+}
 
 // Infinite scroll refs
 const gridScrollContainer = ref(null)
@@ -1385,5 +1442,17 @@ tbody tr {
 /* Remove will-change when not hovering to save resources */
 tbody tr:not(:hover):not(:active) {
 	will-change: auto;
+}
+</style>
+
+<style>
+/* Barcode not found popup transition (teleported to body) */
+.barcode-not-found-fade-enter-active,
+.barcode-not-found-fade-leave-active {
+	transition: opacity 0.2s ease;
+}
+.barcode-not-found-fade-enter-from,
+.barcode-not-found-fade-leave-to {
+	opacity: 0;
 }
 </style>

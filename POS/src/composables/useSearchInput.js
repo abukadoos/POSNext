@@ -24,8 +24,10 @@ import { QueuedMutex } from "@/utils/mutex"
  * @param {import('vue').Ref<boolean>} options.isAnyDialogOpen
  * @param {(barcode: string) => Promise<boolean>} [options.tryCustomerBarcode]
  *        Optional. If barcode starts with "101", called with full barcode; return true if handled (e.g. customer set).
+ * @param {(barcode: string) => void} [options.onBarcodeNotFound]
+ *        Optional. When barcode lookup finds no item, called with the barcode (e.g. to show a modal). If not provided, uses showWarning.
  */
-export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialogOpen, tryCustomerBarcode }) {
+export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialogOpen, tryCustomerBarcode, onBarcodeNotFound }) {
 	// --- Reactive state (exposed) ---
 	const searchInputRef = ref(null)
 	const scannerEnabled = ref(false)
@@ -33,6 +35,8 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 
 	// --- Internal (non-reactive) ---
 	let autoSearchTimer = null
+	let refocusTimer = null
+	const REFOCUS_DELAY_MS = 2500
 	const barcodeQueue = new QueuedMutex({ timeout: 10000, name: "BarcodeSearch" })
 
 	// ---- Timer helpers ----
@@ -41,6 +45,13 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 		if (autoSearchTimer) {
 			clearTimeout(autoSearchTimer)
 			autoSearchTimer = null
+		}
+	}
+
+	function clearRefocusTimer() {
+		if (refocusTimer) {
+			clearTimeout(refocusTimer)
+			refocusTimer = null
 		}
 	}
 
@@ -130,6 +141,25 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 		clearSearchAndResetInput()
 	}
 
+	/** When search input gains focus, cancel any pending refocus so we don’t steal focus. */
+	function onSearchFocus() {
+		clearRefocusTimer()
+	}
+
+	/**
+	 * When search input loses focus and scanner/auto-add is on, refocus after a short delay
+	 * so the cashier can keep scanning without re-tapping the field.
+	 */
+	function onSearchBlur() {
+		clearRefocusTimer()
+		if (!scannerEnabled.value && !autoAddEnabled.value) return
+		if (isAnyDialogOpen?.value) return
+		refocusTimer = setTimeout(() => {
+			refocusTimer = null
+			focusSearchInput()
+		}, REFOCUS_DELAY_MS)
+	}
+
 	/**
 	 * Queue a barcode scan for sequential processing.
 	 *
@@ -173,11 +203,12 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 				console.error("Barcode API error:", error)
 			}
 
-			// Barcode not found — show clear "not found" message.
-			// Note: we cannot fall back to filteredItems here because
-			// clearSearch() was called before the API request, so
-			// filteredItems would contain ALL cached items (not search results).
-			showWarning(__('Item Not Found: No item found with barcode: {0}', [barcode]))
+			// Barcode not found — show modal or toast so cashier can see and acknowledge.
+			if (typeof onBarcodeNotFound === 'function') {
+				onBarcodeNotFound(barcode)
+			} else {
+				showWarning(__('Item Not Found: No item found with barcode: {0}', [barcode]))
+			}
 			focusSearchInput()
 		})
 	}
@@ -222,6 +253,7 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 	// ---- Cleanup ----
 	function cleanup() {
 		clearAutoSearchTimer()
+		clearRefocusTimer()
 		stopDialogWatcher()
 	}
 
@@ -237,6 +269,8 @@ export function useSearchInput({ itemStore, onItemFound, showWarning, isAnyDialo
 		handleSearchInput,
 		handleKeyDown,
 		handleSearchClick,
+		onSearchFocus,
+		onSearchBlur,
 
 		// Toggles
 		toggleBarcodeScanner,
