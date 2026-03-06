@@ -68,4 +68,5 @@ DEFAULT_POS_SETTINGS = {
 	"enable_session_lock": 0,
 	"session_lock_timeout": 5,
 	"show_variants_as_items": 0,
+	"item_groups_for_rate_edit": [],
 }

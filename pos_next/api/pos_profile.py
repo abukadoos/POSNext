@@ -69,7 +69,13 @@ def get_pos_profile_data(pos_profile):
 
 @frappe.whitelist()
 def get_pos_settings(pos_profile):
-	"""Get POS Settings for a given POS Profile"""
+	"""Get POS Settings for a given POS Profile.
+
+	If POS Settings has a custom field "Item Groups for Rate Edit" (custom_item_groups_for_rate_edit)
+	or standard field item_groups_for_rate_edit, its value (comma-separated) is returned as
+	item_groups_for_rate_edit list. Only items in these groups can have rate edited on POS when
+	Allow User to Edit Rate is enabled. Example: "Vegetables, Other".
+	"""
 	from pos_next.api.constants import POS_SETTINGS_FIELDS, DEFAULT_POS_SETTINGS
 
 	if not pos_profile:
@@ -86,6 +92,21 @@ def get_pos_settings(pos_profile):
 
 		if not pos_settings:
 			return DEFAULT_POS_SETTINGS.copy()
+
+		# Optional: item groups allowed for rate edit (e.g. Vegetables, Other). Custom field or standard.
+		pos_settings["item_groups_for_rate_edit"] = []
+		for field_name in ("custom_item_groups_for_rate_edit", "item_groups_for_rate_edit"):
+			if frappe.db.has_column("POS Settings", field_name):
+				val = frappe.db.get_value(
+					"POS Settings",
+					{"pos_profile": pos_profile, "enabled": 1},
+					field_name
+				)
+				if val:
+					pos_settings["item_groups_for_rate_edit"] = [
+						x.strip() for x in str(val).split(",") if x.strip()
+					]
+				break
 
 		return pos_settings
 	except Exception:

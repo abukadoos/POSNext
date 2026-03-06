@@ -216,6 +216,21 @@ def _get_pos_settings(pos_profile_doc):
 		) else 0
 		settings["disable_rounded_total"] = pos_profile_doc.disable_rounded_total or 0
 
+		# Item groups allowed for rate edit (custom/standard field). Normalize to list for frontend.
+		settings["item_groups_for_rate_edit"] = []
+		for field_name in ("custom_item_groups_for_rate_edit", "item_groups_for_rate_edit"):
+			if frappe.db.has_column("POS Settings", field_name):
+				val = frappe.db.get_value(
+					"POS Settings",
+					{"pos_profile": pos_profile_doc.name, "enabled": 1},
+					field_name,
+				)
+				if val:
+					settings["item_groups_for_rate_edit"] = [
+						x.strip() for x in str(val).split(",") if x.strip()
+					]
+				break
+
 		return settings
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Get POS Settings Error")

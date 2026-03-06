@@ -68,6 +68,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		// Security
 		enable_session_lock: 0,
 		session_lock_timeout: 5,
+		item_groups_for_rate_edit: [],
 	})
 
 	const isLoading = ref(false)
@@ -107,6 +108,20 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 	const allowUserToEditRate = computed(() =>
 		Boolean(settings.value.allow_user_to_edit_rate),
 	)
+	// Item groups allowed for rate edit. Empty = all groups (when allow_user_to_edit_rate is on).
+	const itemGroupsForRateEdit = computed(() => {
+		const raw = settings.value.item_groups_for_rate_edit
+		if (Array.isArray(raw)) return raw
+		if (typeof raw === "string") {
+			try {
+				const parsed = JSON.parse(raw)
+				return Array.isArray(parsed) ? parsed : []
+			} catch {
+				return raw ? [raw] : []
+			}
+		}
+		return []
+	})
 	const disableRoundedTotal = computed(() =>
 		Boolean(settings.value.disable_rounded_total),
 	)
@@ -345,6 +360,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 			// Security
 			enable_session_lock: 0,
 			session_lock_timeout: 5,
+			item_groups_for_rate_edit: [],
 		}
 		isLoaded.value = false
 	}
@@ -419,6 +435,7 @@ export const usePOSSettingsStore = defineStore("posSettings", () => {
 		allowAdditionalDiscount,
 		allowItemDiscount,
 		allowUserToEditRate,
+		itemGroupsForRateEdit,
 		disableRoundedTotal,
 		allowCreditSale,
 		allowCustomerCreditPayment,

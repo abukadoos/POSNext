@@ -350,15 +350,25 @@ const hasPricingRules = computed(() => {
 
 // Rate editing is allowed only if:
 // 1. POS Settings allows rate editing AND
-// 2. Item does NOT have pricing rules (promotional offers) applied
+// 2. (No item-group restriction, OR item's group is in the allowed list) AND
+// 3. Item does NOT have pricing rules (promotional offers) applied
 const canEditRate = computed(() => {
-	return settingsStore.allowUserToEditRate && !hasPricingRules.value
+	if (!settingsStore.allowUserToEditRate || hasPricingRules.value) return false
+	const groups = settingsStore.itemGroupsForRateEdit || []
+	// Empty list = allow all groups (backward compatible). Otherwise only listed groups.
+	if (groups.length === 0) return true
+	const itemGroup = localItem.value?.item_group
+	return itemGroup && groups.includes(itemGroup)
 })
 
 // Tooltip message for why rate editing is disabled
 const rateEditDisabledReason = computed(() => {
 	if (!settingsStore.allowUserToEditRate) {
 		return __('Rate editing is disabled')
+	}
+	const groups = settingsStore.itemGroupsForRateEdit || []
+	if (groups.length > 0 && localItem.value?.item_group && !groups.includes(localItem.value.item_group)) {
+		return __('Rate edit allowed only for: {0}', [groups.join(', ')])
 	}
 	if (hasPricingRules.value) {
 		return __('Locked (offer applied)')

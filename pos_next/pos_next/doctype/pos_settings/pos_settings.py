@@ -122,6 +122,17 @@ def get_pos_settings(pos_profile):
 		frappe.db.get_single_value("Stock Settings", "allow_negative_stock") or 0
 	)
 
+	# Item groups allowed for rate edit (custom field or standard). Normalize to list for frontend.
+	settings["item_groups_for_rate_edit"] = []
+	for field_name in ("custom_item_groups_for_rate_edit", "item_groups_for_rate_edit"):
+		if frappe.db.has_column("POS Settings", field_name):
+			val = settings.get(field_name)
+			if val:
+				settings["item_groups_for_rate_edit"] = [
+					x.strip() for x in str(val).split(",") if x.strip()
+				]
+			break
+
 	return settings
 
 
