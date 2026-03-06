@@ -52,6 +52,7 @@ def remove_custom_fields():
 		custom_fields = [
 			"Sales Invoice-posa_pos_opening_shift",
 			"Sales Invoice-posa_is_printed",
+			"Selling Settings-set_zero_rate_for_expired_batch",
 			# Note: Item-custom_company is shared with Nexus app
 			# Only remove if Nexus is not installed
 		]
@@ -242,6 +243,7 @@ def get_custom_fields_for_cleanup():
 	custom_fields.extend([
 		"Sales Invoice-posa_pos_opening_shift",
 		"Sales Invoice-posa_is_printed",
+		"Selling Settings-set_zero_rate_for_expired_batch",
 	])
 
 	# Conditional removal (shared with other apps)
